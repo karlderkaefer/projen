@@ -93,6 +93,7 @@ new TextFile(project, 'projen.bash', {
 
 project.addExcludeFromCleanup('src/__tests__/**');
 project.gitignore.include('templates/**');
+project.gitignore.addPatterns('.idea');
 
 // expand markdown macros in readme
 const macros = project.addTask('readme-macros');

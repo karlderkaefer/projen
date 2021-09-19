@@ -54,6 +54,7 @@ tsconfig.json
 !/API.md
 !/projen.bash
 !templates/**
+.idea
 !/.markdownlint.json
 !/.vscode/launch.json
 !/.github/workflows/release.yml
