@@ -1,4 +1,10 @@
-const { JsiiProject, JsonFile, TextFile } = require('./lib');
+const { JsiiProject, JsonFile, TextFile, DockerCompose, DockerComposeServiceDescription, YamlFile, Yaml2File } = require('./lib');
+const {
+  CircleCi,
+  Orb,
+  Workflow,
+  Job,
+} = require('./lib/circle-ci');
 
 const project = new JsiiProject({
   name: 'projen',
@@ -154,4 +160,36 @@ project.addTask('contributors:update', {
   exec: 'all-contributors check | grep "Missing contributors" -A 1 | tail -n1 | sed -e "s/,//g" | xargs -n1 | grep -v "\[bot\]" | xargs -n1 -I{} all-contributors add {} code',
 });
 
+const compose = new DockerCompose(project);
+compose.addService('nginx', {
+  image: 'nginx',
+});
+
+const yaml = new Yaml2File(project, 'some-yaml.yaml', {});
+
+const testJob = {
+  'cdk/test': {
+    requires: ['cdk/test'],
+    context: ['NPM', 'Soanrqube'],
+    some: ['hello1', 'hello2'],
+  },
+};
+const testWorkflow = [testJob] ;
+
+const options = {
+  description: 'blubb',
+  orbs: {
+    orb1: new Orb('signavio/cdk-orb', '1.0.0'),
+  },
+  jobs: [
+    'job1',
+    2,
+  ],
+  workflows: {
+    build: {
+      jobs: testWorkflow,
+    },
+  },
+};
+const circle = new CircleCi(project, options);
 project.synth();

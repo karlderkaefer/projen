@@ -114,7 +114,7 @@ export class DockerCompose extends Component {
     super(project);
 
     const nameSuffix = props?.nameSuffix ? `${props!.nameSuffix}.yml` : 'yml';
-    new YamlFile(project, `docker-compose.${nameSuffix}`, {
+    new YamlFile(project, `docker-compose-bla.${nameSuffix}`, {
       committed: true,
       readonly: true,
       obj: () => this._synthesizeDockerCompose(),
