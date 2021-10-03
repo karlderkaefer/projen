@@ -29,22 +29,3 @@ export class YamlFile extends ObjectFile {
     ].join('\n');
   }
 }
-
-export class Yaml2File extends ObjectFile {
-  constructor(project: Project, filePath: string, options: YamlFileOptions) {
-    super(project, filePath, options);
-  }
-
-  protected synthesizeContent(resolver: IResolver): string | undefined {
-    const json = super.synthesizeContent(resolver);
-    if (!json) {
-      return undefined;
-    }
-
-    return [
-      ... (this.marker ? [`# ${YamlFile.PROJEN_MARKER}`] : []),
-      '',
-      YAML.stringify(JSON.parse(json), { indent: 2 }),
-    ].join('\n');
-  }
-}

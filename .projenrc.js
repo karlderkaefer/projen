@@ -1,11 +1,5 @@
 const { black } = require('chalk');
-const { JsiiProject, JsonFile, TextFile, DockerCompose, DockerComposeServiceDescription, YamlFile, Yaml2File } = require('./lib');
-const {
-  CircleCi,
-  Orb,
-  Workflow,
-  Job,
-} = require('./lib/circle-ci');
+const { JsiiProject, JsonFile, TextFile } = require('./lib');
 
 const project = new JsiiProject({
   name: 'projen',

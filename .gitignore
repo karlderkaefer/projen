@@ -57,5 +57,4 @@ tsconfig.json
 .idea
 !/.markdownlint.json
 !/.vscode/launch.json
-!/circle.yml
 !/.github/workflows/release.yml

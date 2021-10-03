@@ -20,7 +20,6 @@
 /.projen/jest-snapshot-resolver.js 	linguist-generated
 /.projen/tasks.json                	linguist-generated
 /.vscode/launch.json               	linguist-generated
-/circle.yml                        	linguist-generated
 /LICENSE                           	linguist-generated
 /package.json                      	linguist-generated
 /projen.bash                       	linguist-generated
