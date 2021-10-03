@@ -21,10 +21,8 @@
 /.projen/tasks.json                	linguist-generated
 /.vscode/launch.json               	linguist-generated
 /circle.yml                        	linguist-generated
-/docker-compose-bla.yml            	linguist-generated
 /LICENSE                           	linguist-generated
 /package.json                      	linguist-generated
 /projen.bash                       	linguist-generated
-/some-yaml.yaml                    	linguist-generated
 /tsconfig.eslint.json              	linguist-generated
 /yarn.lock                         	linguist-generated

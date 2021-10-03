@@ -57,7 +57,5 @@ tsconfig.json
 .idea
 !/.markdownlint.json
 !/.vscode/launch.json
-!/docker-compose-bla.yml
-!/some-yaml.yaml
 !/circle.yml
 !/.github/workflows/release.yml

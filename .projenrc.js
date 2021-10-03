@@ -1,3 +1,4 @@
+const { black } = require('chalk');
 const { JsiiProject, JsonFile, TextFile, DockerCompose, DockerComposeServiceDescription, YamlFile, Yaml2File } = require('./lib');
 const {
   CircleCi,
@@ -160,36 +161,27 @@ project.addTask('contributors:update', {
   exec: 'all-contributors check | grep "Missing contributors" -A 1 | tail -n1 | sed -e "s/,//g" | xargs -n1 | grep -v "\[bot\]" | xargs -n1 -I{} all-contributors add {} code',
 });
 
-const compose = new DockerCompose(project);
-compose.addService('nginx', {
-  image: 'nginx',
-});
-
-const yaml = new Yaml2File(project, 'some-yaml.yaml', {});
-
-const testJob = {
-  'cdk/test': {
-    requires: ['cdk/test'],
-    context: ['NPM', 'Soanrqube'],
-    some: ['hello1', 'hello2'],
-  },
-};
-const testWorkflow = [testJob] ;
-
-const options = {
-  description: 'blubb',
-  orbs: {
-    orb1: new Orb('signavio/cdk-orb', '1.0.0'),
-  },
-  jobs: [
-    'job1',
-    2,
+const circle = new CircleCi(project, {
+  orbs: [
+    new Orb('cdk', 'signavio/cdk-orb', '0.10.8' ),
   ],
-  workflows: {
-    build: {
-      jobs: testWorkflow,
-    },
+});
+circle.addWorkflow(new Workflow('build', [
+  {
+    name: 'cdk/test',
+    context: ['NPM'],
   },
-};
-const circle = new CircleCi(project, options);
+  {
+    name: 'cdk/sonarqube',
+    context: ['NPM', 'Sonarqube'],
+    requires: ['cdk/test'],
+  },
+  {
+    name: 'cdk/publish',
+    requires: ['cdk/test'],
+    context: ['npm-github'],
+    filters: [{ branches: { only: ['master', 'main'] } }],
+  },
+]));
+
 project.synth();
