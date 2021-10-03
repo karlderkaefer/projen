@@ -64,7 +64,7 @@ export class CircleCi extends Component {
     this.options = options;
     const circleCiEnabled = options.enabled || true;
     if (circleCiEnabled) {
-      this.file = new YamlFile(project, 'circle.yml', {
+      this.file = new YamlFile(project, '.circleci/config.yml', {
         committed: true,
         readonly: true,
         obj: () => this.renderCircleCi(),
