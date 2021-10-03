@@ -1,4 +1,3 @@
-const { black } = require('chalk');
 const { JsiiProject, JsonFile, TextFile } = require('./lib');
 
 const project = new JsiiProject({
@@ -154,28 +153,5 @@ project.devContainer.addTasks(setup);
 project.addTask('contributors:update', {
   exec: 'all-contributors check | grep "Missing contributors" -A 1 | tail -n1 | sed -e "s/,//g" | xargs -n1 | grep -v "\[bot\]" | xargs -n1 -I{} all-contributors add {} code',
 });
-
-const circle = new CircleCi(project, {
-  orbs: [
-    new Orb('cdk', 'signavio/cdk-orb', '0.10.8' ),
-  ],
-});
-circle.addWorkflow(new Workflow('build', [
-  {
-    name: 'cdk/test',
-    context: ['NPM'],
-  },
-  {
-    name: 'cdk/sonarqube',
-    context: ['NPM', 'Sonarqube'],
-    requires: ['cdk/test'],
-  },
-  {
-    name: 'cdk/publish',
-    requires: ['cdk/test'],
-    context: ['npm-github'],
-    filters: [{ branches: { only: ['master', 'main'] } }],
-  },
-]));
 
 project.synth();
