@@ -9,11 +9,13 @@ export interface CircleCiProps {
   readonly workflows?: IWorkflow[];
 }
 
+export const FilterMainBranchOnly = [{ branches: { only: ['master', 'main'] } }];
+
 export interface IOrb {
   readonly key: string;
   readonly name: string;
   readonly version: string;
-  getFullOrb(): string;
+  fullOrbName(): string;
 }
 
 export class Orb implements IOrb {
@@ -26,7 +28,7 @@ export class Orb implements IOrb {
     this.name = name;
     this.version = version;
   }
-  public getFullOrb(): string {
+  public fullOrbName(): string {
     return `${this.name}@${this.version}`;
   }
 }
@@ -51,6 +53,7 @@ export interface IJob {
   readonly requires?: string[];
   readonly context?: string[];
   readonly filters?: any;
+  readonly params?: any;
 }
 
 export class CircleCi extends Component {
@@ -93,7 +96,7 @@ export class CircleCi extends Component {
   }
   public addOrb(orb: IOrb) {
     console.log('adding orb', orb);
-    this.orbs[orb.key] = orb.getFullOrb();
+    this.orbs[orb.key] = orb.fullOrbName();
   }
   public addWorkflow(workflow: IWorkflow) {
     console.log('got workflow jobs', workflow.jobs);
@@ -118,9 +121,10 @@ export class CircleCi extends Component {
 
 function renderJob(job: IJob) {
   return {
+    ...(job.params ?? {}),
     ...(job.requires && job.requires.length > 0 ? { requires: job.requires }: {}),
     ...(job.context && job.context.length > 0 ? { context: job.context }: {}),
-    ...(job.filters && job.filters.length > 0 ? { filters: job.filters }: {}),
+    ...(job.filters ? { filters: job.filters }: {}),
   };
 }
 
