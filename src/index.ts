@@ -1,5 +1,4 @@
 export * from "./component";
-export * from './circle-ci';
 export * from "./dev-env";
 export * from "./dependencies";
 export * from "./docker-compose";
@@ -37,6 +36,7 @@ export * from "./xmlfile";
 export * as web from "./web";
 export * as github from "./github";
 export * as gitlab from "./gitlab";
+export * as circleci from "./circleci";
 export * as vscode from "./vscode";
 export * as java from "./java";
 export * as python from "./python";

@@ -1,6 +1,6 @@
-import { Component } from './component';
-import { Project } from './project';
-import { YamlFile } from './yaml';
+import { Component } from "../component";
+import { Project } from "../project";
+import { YamlFile } from "../yaml";
 
 export interface CircleCiProps {
   readonly orbs?: IOrb[];
@@ -8,8 +8,6 @@ export interface CircleCiProps {
   readonly version?: string;
   readonly workflows?: IWorkflow[];
 }
-
-export const FilterMainBranchOnly = [{ branches: { only: ['master', 'main'] } }];
 
 export interface IOrb {
   readonly key: string;
@@ -56,7 +54,7 @@ export interface IJob {
   readonly params?: any;
 }
 
-export class CircleCi extends Component {
+export class Circleci extends Component {
   public readonly file: YamlFile | undefined;
   private options: CircleCiProps;
   private orbs: Record<string, string> = {};
@@ -67,7 +65,7 @@ export class CircleCi extends Component {
     this.options = options;
     const circleCiEnabled = options.enabled || true;
     if (circleCiEnabled) {
-      this.file = new YamlFile(project, '.circleci/config.yml', {
+      this.file = new YamlFile(project, ".circleci/config.yml", {
         committed: true,
         readonly: true,
         obj: () => this.renderCircleCi(),
@@ -77,9 +75,9 @@ export class CircleCi extends Component {
   private renderCircleCi() {
     this.initOrbs();
     this.initWorkflow();
-    console.log('have orbs:', this.orbs);
+    // console.log("have orbs:", this.orbs);
     return {
-      version: this.options.version || '2.1',
+      version: this.options.version || "2.1",
       orbs: this.orbs,
       workflows: this.workflows,
     };
@@ -95,13 +93,13 @@ export class CircleCi extends Component {
     }
   }
   public addOrb(orb: IOrb) {
-    console.log('adding orb', orb);
+    console.log("adding orb", orb);
     this.orbs[orb.key] = orb.fullOrbName();
   }
   public addWorkflow(workflow: IWorkflow) {
-    console.log('got workflow jobs', workflow.jobs);
+    console.log("got workflow jobs", workflow.jobs);
     if (workflow.jobs.length === 0) {
-      throw new Error('Workflow must have at least one job');
+      throw new Error("Workflow must have at least one job");
     }
     const jobs: Array<any> = [];
     for (const job of workflow.jobs ?? []) {
@@ -122,9 +120,11 @@ export class CircleCi extends Component {
 function renderJob(job: IJob) {
   return {
     ...(job.params ?? {}),
-    ...(job.requires && job.requires.length > 0 ? { requires: job.requires }: {}),
-    ...(job.context && job.context.length > 0 ? { context: job.context }: {}),
-    ...(job.filters ? { filters: job.filters }: {}),
+    ...(job.requires && job.requires.length > 0
+      ? { requires: job.requires }
+      : {}),
+    ...(job.context && job.context.length > 0 ? { context: job.context } : {}),
+    ...(job.filters ? { filters: job.filters } : {}),
   };
 }
 
