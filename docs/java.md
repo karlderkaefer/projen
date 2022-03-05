@@ -46,14 +46,12 @@ const project = new java.JavaProject({
 project.synth();
 ```
 
-> At this point, projenrc is in JavaScript, but in the future we plan to allow
-> specifying your project definitions in Java.
+It is possible to create your projenrc file in java. In the future, this will be
+the default, but at the moment you need to add some configuration. See the
+[`projenrc.java`](#projenrcjava) section for details.
 
 To modify your project definitions, edit `.projenrc.js` and run `projen` again
-to re-synthesize your project. The following sections describe the various
-features of your project.
-
-The following sections describe the various features of Java projects.
+to re-synthesize your project. The following sections describe the various features of Java projects.
 
 ## Versioning
 
@@ -162,7 +160,7 @@ In order to synthesize, run: `pj synth`, which will compile your test code and
 execute this program.
 
 By default, `projenrc.java` is placed under the `test` scope (and
-`com.github.eladb/projen` test dependency is added). This ensures that
+`io.github.cdklabs/projen` test dependency is added). This ensures that
 application code does not take a dependency on projen code. You can change this
 behavior by setting the `testScope` option to `false`.
 

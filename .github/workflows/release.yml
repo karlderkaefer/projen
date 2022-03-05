@@ -22,28 +22,25 @@ jobs:
           fetch-depth: 0
       - name: Set git identity
         run: |-
-          git config user.name "Automation"
+          git config user.name "github-actions"
           git config user.email "github-actions@github.com"
       - name: Setup Node.js
         uses: actions/setup-node@v2.2.0
         with:
-          node-version: 10.17.0
+          node-version: 12.22.0
       - name: Install dependencies
         run: yarn install --check-files --frozen-lockfile
       - name: release
         run: /bin/bash ./projen.bash release
       - name: Check for new commits
         id: git_remote
-        run: echo ::set-output name=latest_commit::"$(git ls-remote origin -h ${{
-          github.ref }} | cut -f1)"
+        run: echo ::set-output name=latest_commit::"$(git ls-remote origin -h ${{ github.ref }} | cut -f1)"
       - name: Upload artifact
         if: ${{ steps.git_remote.outputs.latest_commit == github.sha }}
         uses: actions/upload-artifact@v2.1.1
         with:
-          name: dist
+          name: build-artifact
           path: dist
-    container:
-      image: jsii/superchain:node14
   release_github:
     name: Publish to GitHub Releases
     needs: release
@@ -53,20 +50,24 @@ jobs:
       issues: write
     if: needs.release.outputs.latest_commit == github.sha
     steps:
+      - uses: actions/setup-node@v2
+        with:
+          node-version: 14.x
       - name: Download build artifacts
         uses: actions/download-artifact@v2
         with:
-          name: dist
+          name: build-artifact
           path: dist
+      - name: Prepare Repository
+        run: mv dist .repo
+      - name: Collect GitHub Metadata
+        run: mv .repo/dist dist
       - name: Release
-        run: errout=$(mktemp); gh release create v$(cat dist/version.txt) -R
-          $GITHUB_REPOSITORY -F dist/changelog.md -t v$(cat dist/version.txt) 2>
-          $errout && true; exitcode=$?; if [ $exitcode -ne 0 ] && ! grep -q
-          "Release.tag_name already exists" $errout; then cat $errout; exit
-          $exitcode; fi
+        run: errout=$(mktemp); gh release create $(cat dist/releasetag.txt) -R $GITHUB_REPOSITORY -F dist/changelog.md -t $(cat dist/releasetag.txt) --target $GITHUB_REF 2> $errout && true; exitcode=$?; if [ $exitcode -ne 0 ] && ! grep -q "Release.tag_name already exists" $errout; then cat $errout; exit $exitcode; fi
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          GITHUB_REF: ${{ github.ref }}
       - name: Extract Version
         if: ${{ failure() }}
         id: extract-version
@@ -76,10 +77,8 @@ jobs:
         uses: imjohnbo/issue-bot@v3
         with:
           labels: failed-release
-          title: Publishing v${{ steps.extract-version.outputs.VERSION }} to GitHub
-            Releases failed
-          body: See https://github.com/${{ github.repository }}/actions/runs/${{
-            github.run_id }}
+          title: Publishing v${{ steps.extract-version.outputs.VERSION }} to GitHub Releases failed
+          body: See https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
   release_npm:
@@ -91,13 +90,24 @@ jobs:
       issues: write
     if: needs.release.outputs.latest_commit == github.sha
     steps:
+      - uses: actions/setup-node@v2
+        with:
+          node-version: 14.x
       - name: Download build artifacts
         uses: actions/download-artifact@v2
         with:
-          name: dist
+          name: build-artifact
           path: dist
+      - name: Prepare Repository
+        run: mv dist .repo
+      - name: Install Dependencies
+        run: cd .repo && yarn install --check-files --frozen-lockfile
+      - name: Create js artifact
+        run: cd .repo && npx projen package:js
+      - name: Collect js Artifact
+        run: mv .repo/dist dist
       - name: Release
-        run: npx -p jsii-release@latest jsii-release-npm
+        run: npx -p publib@latest publib-npm
         env:
           NPM_DIST_TAG: latest
           NPM_REGISTRY: registry.npmjs.org
@@ -112,12 +122,9 @@ jobs:
         with:
           labels: failed-release
           title: Publishing v${{ steps.extract-version.outputs.VERSION }} to npm failed
-          body: See https://github.com/${{ github.repository }}/actions/runs/${{
-            github.run_id }}
+          body: See https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    container:
-      image: jsii/superchain:node14
   release_maven:
     name: Publish to Maven Central
     needs: release
@@ -127,13 +134,28 @@ jobs:
       issues: write
     if: needs.release.outputs.latest_commit == github.sha
     steps:
+      - uses: actions/setup-java@v2
+        with:
+          distribution: temurin
+          java-version: 11.x
+      - uses: actions/setup-node@v2
+        with:
+          node-version: 14.x
       - name: Download build artifacts
         uses: actions/download-artifact@v2
         with:
-          name: dist
+          name: build-artifact
           path: dist
+      - name: Prepare Repository
+        run: mv dist .repo
+      - name: Install Dependencies
+        run: cd .repo && yarn install --check-files --frozen-lockfile
+      - name: Create java artifact
+        run: cd .repo && npx projen package:java
+      - name: Collect java Artifact
+        run: mv .repo/dist dist
       - name: Release
-        run: npx -p jsii-release@latest jsii-release-maven
+        run: npx -p publib@latest publib-maven
         env:
           MAVEN_ENDPOINT: https://s01.oss.sonatype.org
           MAVEN_GPG_PRIVATE_KEY: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
@@ -150,14 +172,10 @@ jobs:
         uses: imjohnbo/issue-bot@v3
         with:
           labels: failed-release
-          title: Publishing v${{ steps.extract-version.outputs.VERSION }} to Maven Central
-            failed
-          body: See https://github.com/${{ github.repository }}/actions/runs/${{
-            github.run_id }}
+          title: Publishing v${{ steps.extract-version.outputs.VERSION }} to Maven Central failed
+          body: See https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    container:
-      image: jsii/superchain:node14
   release_pypi:
     name: Publish to PyPI
     needs: release
@@ -167,13 +185,27 @@ jobs:
       issues: write
     if: needs.release.outputs.latest_commit == github.sha
     steps:
+      - uses: actions/setup-node@v2
+        with:
+          node-version: 14.x
+      - uses: actions/setup-python@v2
+        with:
+          python-version: 3.x
       - name: Download build artifacts
         uses: actions/download-artifact@v2
         with:
-          name: dist
+          name: build-artifact
           path: dist
+      - name: Prepare Repository
+        run: mv dist .repo
+      - name: Install Dependencies
+        run: cd .repo && yarn install --check-files --frozen-lockfile
+      - name: Create python artifact
+        run: cd .repo && npx projen package:python
+      - name: Collect python Artifact
+        run: mv .repo/dist dist
       - name: Release
-        run: npx -p jsii-release@latest jsii-release-pypi
+        run: npx -p publib@latest publib-pypi
         env:
           TWINE_USERNAME: ${{ secrets.TWINE_USERNAME }}
           TWINE_PASSWORD: ${{ secrets.TWINE_PASSWORD }}
@@ -187,9 +219,53 @@ jobs:
         with:
           labels: failed-release
           title: Publishing v${{ steps.extract-version.outputs.VERSION }} to PyPI failed
-          body: See https://github.com/${{ github.repository }}/actions/runs/${{
-            github.run_id }}
+          body: See https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    container:
-      image: jsii/superchain:node14
+  release_golang:
+    name: Publish to GitHub Go Module Repository
+    needs: release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: write
+    if: needs.release.outputs.latest_commit == github.sha
+    steps:
+      - uses: actions/setup-node@v2
+        with:
+          node-version: 14.x
+      - uses: actions/setup-go@v2
+        with:
+          go-version: ^1.16.0
+      - name: Download build artifacts
+        uses: actions/download-artifact@v2
+        with:
+          name: build-artifact
+          path: dist
+      - name: Prepare Repository
+        run: mv dist .repo
+      - name: Install Dependencies
+        run: cd .repo && yarn install --check-files --frozen-lockfile
+      - name: Create go artifact
+        run: cd .repo && npx projen package:go
+      - name: Collect go Artifact
+        run: mv .repo/dist dist
+      - name: Release
+        run: npx -p publib@latest publib-golang
+        env:
+          GIT_USER_NAME: github-actions
+          GIT_USER_EMAIL: github-actions@github.com
+          GITHUB_TOKEN: ${{ secrets.GO_GITHUB_TOKEN }}
+      - name: Extract Version
+        if: ${{ failure() }}
+        id: extract-version
+        run: echo "::set-output name=VERSION::$(cat dist/version.txt)"
+      - name: Create Issue
+        if: ${{ failure() }}
+        uses: imjohnbo/issue-bot@v3
+        with:
+          labels: failed-release
+          title: Publishing v${{ steps.extract-version.outputs.VERSION }} to GitHub Go Module Repository failed
+          body: See https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -1,6 +1,6 @@
-import { FileBase, FileBaseOptions, IResolver } from './file';
-import { Project } from './project';
-import { deepMerge } from './util';
+import { FileBase, FileBaseOptions, IResolver } from "./file";
+import { Project } from "./project";
+import { deepMerge } from "./util";
 
 /**
  * Options for `ObjectFile`.
@@ -19,13 +19,6 @@ export interface ObjectFileOptions extends FileBaseOptions {
    * @default false
    */
   readonly omitEmpty?: boolean;
-
-  /**
-   * Adds the projen marker to the file.
-   *
-   * @default true
-   */
-  readonly marker?: boolean;
 }
 
 /**
@@ -37,12 +30,6 @@ export abstract class ObjectFile extends FileBase {
    * synthesized.
    */
   private readonly obj: object;
-
-  /**
-   * Indicates if the projen marker JSON-comment will be added to the output
-   * object.
-   */
-  public marker: boolean;
 
   /**
    * An object to be merged on top of `obj` after the resolver is called
@@ -58,7 +45,6 @@ export abstract class ObjectFile extends FileBase {
     super(project, filePath, options);
 
     this.obj = options.obj ?? {};
-    this.marker = options.marker ?? true;
     this.omitEmpty = options.omitEmpty ?? false;
     this.rawOverrides = {};
   }
@@ -106,7 +92,10 @@ export abstract class ObjectFile extends FileBase {
 
       // if we can't recurse further or the previous value is not an
       // object overwrite it with an object.
-      const isObject = curr[key] != null && typeof(curr[key]) === 'object' && !Array.isArray(curr[key]);
+      const isObject =
+        curr[key] != null &&
+        typeof curr[key] === "object" &&
+        !Array.isArray(curr[key]);
       if (!isObject) {
         curr[key] = {};
       }
@@ -129,9 +118,10 @@ export abstract class ObjectFile extends FileBase {
   protected synthesizeContent(resolver: IResolver): string | undefined {
     const obj = this.obj;
 
-    const resolved = resolver.resolve(obj, {
-      omitEmpty: this.omitEmpty,
-    }) ?? undefined;
+    const resolved =
+      resolver.resolve(obj, {
+        omitEmpty: this.omitEmpty,
+      }) ?? undefined;
 
     if (resolved) {
       deepMerge([resolved, this.rawOverrides], true);
@@ -147,13 +137,13 @@ export abstract class ObjectFile extends FileBase {
 function splitOnPeriods(x: string): string[] {
   // Build this list in reverse because it's more convenient to get the "current"
   // item by doing ret[0] than by ret[ret.length - 1].
-  const ret = [''];
+  const ret = [""];
   for (let i = 0; i < x.length; i++) {
-    if (x[i] === '\\' && i + 1 < x.length) {
+    if (x[i] === "\\" && i + 1 < x.length) {
       ret[0] += x[i + 1];
       i++;
-    } else if (x[i] === '.') {
-      ret.unshift('');
+    } else if (x[i] === ".") {
+      ret.unshift("");
     } else {
       ret[0] += x[i];
     }

@@ -1,7 +1,7 @@
-import { Component } from '../component';
-import { GitHub } from './github';
-import { renderBehavior } from './stale-util';
-import { JobPermission } from './workflows-model';
+import { Component } from "../component";
+import { GitHub } from "./github";
+import { renderBehavior } from "./stale-util";
+import { JobPermission } from "./workflows-model";
 
 /**
  * Options for `Stale`.
@@ -22,6 +22,12 @@ export interface StaleOptions {
    * stale after 60 days and closed within 7 days.
    */
   readonly issues?: StaleBehavior;
+
+  /**
+   * Github Runner selection labels
+   * @default ["ubuntu-latest"]
+   */
+  readonly runsOn?: string[];
 }
 
 /**
@@ -64,9 +70,16 @@ export interface StaleBehavior {
 
   /**
    * The label to apply to the issue/PR when it becomes stale.
-   * @default "Stale"
+   * @default "stale"
    */
   readonly staleLabel?: string;
+
+  /**
+   * Label which exempt an issue/PR from becoming stale. Set to `[]` to disable.
+   *
+   * @default - ["backlog"]
+   */
+  readonly exemptLabels?: string[];
 }
 
 /**
@@ -84,43 +97,60 @@ export class Stale extends Component {
   constructor(github: GitHub, options: StaleOptions = {}) {
     super(github.project);
 
-    const stale = github.addWorkflow('stale');
+    const stale = github.addWorkflow("stale");
     stale.on({
-      schedule: [{ cron: '0 1 * * *' }], // at 1am every day
+      schedule: [{ cron: "0 1 * * *" }], // at 1am every day
       workflowDispatch: {},
     });
 
-    const pullRequests = renderBehavior(options.pullRequest, { stale: 14, close: 2, type: 'pull request' });
-    const issues = renderBehavior(options.issues, { stale: 60, close: 7, type: 'issue' });
+    const pullRequests = renderBehavior(options.pullRequest, {
+      stale: 14,
+      close: 2,
+      type: "pull request",
+    });
+    const issues = renderBehavior(options.issues, {
+      stale: 60,
+      close: 7,
+      type: "issue",
+    });
+
+    const renderExemptLabels = (exemptLabels?: string[]) => {
+      if (!exemptLabels || exemptLabels.length === 0) {
+        return undefined;
+      }
+      return exemptLabels.join(",");
+    };
 
     stale.addJobs({
       stale: {
-        runsOn: 'ubuntu-latest',
+        runsOn: options.runsOn ?? ["ubuntu-latest"],
         permissions: {
           issues: JobPermission.WRITE,
           pullRequests: JobPermission.WRITE,
         },
         steps: [
           {
-            uses: 'actions/stale@v4',
+            uses: "actions/stale@v4",
             with: {
               // disable global
-              'days-before-stale': -1,
-              'days-before-close': -1,
+              "days-before-stale": -1,
+              "days-before-close": -1,
 
               // pull requests
-              'days-before-pr-stale': pullRequests.daysBeforeStale,
-              'days-before-pr-close': pullRequests.daysBeforeClose,
-              'stale-pr-message': pullRequests.staleMessage,
-              'close-pr-message': pullRequests.closeMessage,
-              'stale-pr-label': pullRequests.staleLabel,
+              "days-before-pr-stale": pullRequests.daysBeforeStale,
+              "days-before-pr-close": pullRequests.daysBeforeClose,
+              "stale-pr-message": pullRequests.staleMessage,
+              "close-pr-message": pullRequests.closeMessage,
+              "stale-pr-label": pullRequests.staleLabel,
+              "exempt-pr-labels": renderExemptLabels(pullRequests.exemptLabels),
 
               // issues
-              'days-before-issue-stale': issues.daysBeforeStale,
-              'days-before-issue-close': issues.daysBeforeClose,
-              'stale-issue-message': issues.staleMessage,
-              'close-issue-message': issues.closeMessage,
-              'stale-issue-label': issues.staleLabel,
+              "days-before-issue-stale": issues.daysBeforeStale,
+              "days-before-issue-close": issues.daysBeforeClose,
+              "stale-issue-message": issues.staleMessage,
+              "close-issue-message": issues.closeMessage,
+              "stale-issue-label": issues.staleLabel,
+              "exempt-issue-labels": renderExemptLabels(issues.exemptLabels),
             },
           },
         ],

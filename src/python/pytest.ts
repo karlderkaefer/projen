@@ -1,7 +1,5 @@
-import { Component } from '../component';
-import { SampleDir } from '../sample-file';
-import { Task } from '../tasks';
-import { PythonProject } from './python-project';
+import { Component } from "../component";
+import { PythonProject } from "./python-project";
 
 export interface PytestOptions {
   /**
@@ -25,45 +23,22 @@ export interface PytestOptions {
 }
 
 export class Pytest extends Component {
-  public readonly testTask: Task;
+  readonly testdir: string;
 
   constructor(project: PythonProject, options: PytestOptions = {}) {
     super(project);
 
-    const version = options.version ?? '6.2.1';
+    const version = options.version ?? "6.2.1";
+
+    this.testdir = options.testdir ?? "tests";
 
     project.addDevDependency(`pytest@${version}`);
 
-    this.testTask = project.addTask('test', {
-      description: 'Runs tests',
-      exec: [
-        'pytest',
+    project.testTask.exec(
+      [
+        "pytest",
         ...(options.maxFailures ? [`--maxfail=${options.maxFailures}`] : []),
-      ].join(' '),
-    });
-
-    new SampleDir(project, 'tests', {
-      files: {
-        '__init__.py': '',
-        'test_example.py': [
-          'import pytest',
-          '',
-          `from ${project.moduleName}.example import hello`,
-          '',
-          '@pytest.mark.parametrize(',
-          '    ("name", "expected"),',
-          '    [',
-          '        ("A. Musing", "Hello A. Musing!"),',
-          '        ("traveler", "Hello traveler!"),',
-          '        ("projen developer", "Hello projen developer!"),',
-          '    ],',
-          ')',
-          'def test_hello(name, expected):',
-          '    """Example test with parametrization."""',
-          '    assert hello(name) == expected',
-          '',
-        ].join('\n'),
-      },
-    });
+      ].join(" ")
+    );
   }
 }

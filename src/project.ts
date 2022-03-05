@@ -1,27 +1,25 @@
-import * as path from 'path';
-import { cleanup } from './cleanup';
-import { Clobber } from './clobber';
-import { PROJEN_VERSION } from './common';
-import { Component } from './component';
-import { Dependencies } from './deps';
-import { FileBase } from './file';
-import { GitAttributesFile } from './git/gitattributes';
-import { AutoApprove, AutoApproveOptions, AutoMergeOptions, GitHub, GitHubOptions } from './github';
-import { Stale, StaleOptions } from './github/stale';
-import { Gitpod } from './gitpod';
-import { IgnoreFile } from './ignore-file';
-import * as inventory from './inventory';
-import { resolveNewProject } from './javascript/render-options';
-import { JsonFile } from './json';
-import { Projenrc, ProjenrcOptions } from './json/index';
-import { Logger, LoggerOptions } from './logger';
-import { ObjectFile } from './object-file';
-import { NewProjectOptionHints } from './option-hints';
-import { SampleReadme, SampleReadmeProps } from './readme';
-import { Task, TaskOptions } from './tasks';
-import { Tasks } from './tasks/tasks';
-import { isTruthy } from './util';
-import { VsCode, DevContainer } from './vscode';
+import { mkdtempSync, realpathSync, renameSync } from "fs";
+import { tmpdir } from "os";
+import * as path from "path";
+import * as glob from "glob";
+import { cleanup, FILE_MANIFEST } from "./cleanup";
+import { IS_TEST_RUN, PROJEN_VERSION } from "./common";
+import { Component } from "./component";
+import { Dependencies } from "./dependencies";
+import { FileBase } from "./file";
+import { GitAttributesFile } from "./gitattributes";
+import { IgnoreFile } from "./ignore-file";
+import * as inventory from "./inventory";
+import { resolveInitProject } from "./javascript/render-options";
+import { JsonFile } from "./json";
+import { Logger, LoggerOptions } from "./logger";
+import { ObjectFile } from "./object-file";
+import { InitProjectOptionHints } from "./option-hints";
+import { ProjectBuild as ProjectBuild } from "./project-build";
+import { Projenrc, ProjenrcOptions } from "./projenrc-json";
+import { Task, TaskOptions } from "./task";
+import { Tasks } from "./tasks";
+import { isTruthy } from "./util";
 
 /**
  * Options for `Project`.
@@ -68,10 +66,19 @@ export interface ProjectOptions {
   readonly projenrcJson?: boolean;
 
   /**
-    * Options for .projenrc.json
-    * @default - default options
-    */
+   * Options for .projenrc.json
+   * @default - default options
+   */
   readonly projenrcJsonOptions?: ProjenrcOptions;
+
+  /**
+   * The shell command to use in order to run the projen CLI.
+   *
+   * Can be used to customize in special environments.
+   *
+   * @default "npx projen"
+   */
+  readonly projenCommand?: string;
 }
 
 /**
@@ -82,7 +89,7 @@ export class Project {
    * The name of the default task (the task executed when `projen` is run without arguments). Normally
    * this task should synthesize the project files.
    */
-  public static readonly DEFAULT_TASK = 'default';
+  public static readonly DEFAULT_TASK = "default";
 
   /**
    * Project name.
@@ -94,12 +101,10 @@ export class Project {
    */
   public readonly gitignore: IgnoreFile;
 
-
   /**
    * The .gitattributes file for this repository.
    */
   public readonly gitattributes: GitAttributesFile;
-
 
   /**
    * A parent project. If undefined, this is the root project.
@@ -136,37 +141,54 @@ export class Project {
    * includes the original set of options passed to the CLI and also the JSII
    * FQN of the project type.
    */
-  public readonly newProject?: NewProject;
+  public readonly initProject?: InitProject;
+
+  /**
+   * The command to use in order to run the projen CLI.
+   */
+  public readonly projenCommand: string;
+
+  /**
+   * This is the "default" task, the one that executes "projen". Undefined if
+   * the project is being ejected.
+   */
+  public readonly defaultTask?: Task;
+
+  /**
+   * This task ejects the project from projen. This is undefined if the project
+   * it self is being ejected.
+   *
+   * See docs for more information.
+   */
+  private readonly ejectTask?: Task;
+
+  /**
+   * Manages the build process of the project.
+   */
+  public readonly projectBuild: ProjectBuild;
 
   private readonly _components = new Array<Component>();
   private readonly subprojects = new Array<Project>();
   private readonly tips = new Array<string>();
   private readonly excludeFromCleanup: string[];
+  private readonly _ejected: boolean;
 
   constructor(options: ProjectOptions) {
-    this.newProject = resolveNewProject(options);
+    this.initProject = resolveInitProject(options);
 
     this.name = options.name;
     this.parent = options.parent;
     this.excludeFromCleanup = [];
 
-    if (this.parent && options.outdir && path.isAbsolute(options.outdir)) {
-      throw new Error('"outdir" must be a relative path');
-    }
+    this._ejected = isTruthy(process.env.PROJEN_EJECTING);
 
-    let outdir;
-    if (options.parent) {
-      if (!options.outdir) {
-        throw new Error('"outdir" must be specified for subprojects');
-      }
-
-      outdir = path.join(options.parent.outdir, options.outdir);
+    if (this.ejected) {
+      this.projenCommand = "scripts/run-task";
     } else {
-      outdir = options.outdir ?? '.';
+      this.projenCommand = options.projenCommand ?? "npx projen";
     }
 
-    this.outdir = path.resolve(outdir);
-
+    this.outdir = this.determineOutdir(options.outdir);
     this.root = this.parent ? this.parent.root : this;
 
     // must happen after this.outdir, this.parent and this.root are initialized
@@ -175,16 +197,33 @@ export class Project {
     // ------------------------------------------------------------------------
 
     this.gitattributes = new GitAttributesFile(this);
-    this.annotateGenerated('/.projen/**'); // contents  of the .projen/ directory are generated by projen
+    this.annotateGenerated("/.projen/**"); // contents  of the .projen/ directory are generated by projen
     this.annotateGenerated(`/${this.gitattributes.path}`); // the .gitattributes file itself is generated
 
-    this.gitignore = new IgnoreFile(this, '.gitignore');
-    this.gitignore.exclude('node_modules/'); // created by running `npx projen`
+    this.gitignore = new IgnoreFile(this, ".gitignore");
+    this.gitignore.exclude("node_modules/"); // created by running `npx projen`
     this.gitignore.include(`/${this.gitattributes.path}`);
 
     // oh no: tasks depends on gitignore so it has to be initialized after
     // smells like dep injectionn but god forbid.
     this.tasks = new Tasks(this);
+
+    if (!this.ejected) {
+      this.defaultTask = this.tasks.addTask(Project.DEFAULT_TASK, {
+        description: "Synthesize project files",
+      });
+
+      this.ejectTask = this.tasks.addTask("eject", {
+        description: "Remove projen from the project",
+        env: {
+          PROJEN_EJECTING: "true",
+        },
+      });
+      this.ejectTask.spawn(this.defaultTask);
+    }
+
+    this.projectBuild = new ProjectBuild(this);
+
     this.deps = new Dependencies(this);
 
     this.logger = new Logger(this, options.logging);
@@ -192,6 +231,18 @@ export class Project {
     const projenrcJson = options.projenrcJson ?? false;
     if (projenrcJson) {
       new Projenrc(this, options.projenrcJsonOptions);
+    }
+
+    if (!this.ejected) {
+      new JsonFile(this, FILE_MANIFEST, {
+        omitEmpty: true,
+        obj: () => ({
+          // replace `\` with `/` to ensure paths match across platforms
+          files: this.files
+            .filter((f) => f.readonly)
+            .map((f) => f.path.replace(/\\/g, "/")),
+        }),
+      });
     }
   }
 
@@ -207,7 +258,9 @@ export class Project {
    */
   public get files(): FileBase[] {
     const isFile = (c: Component): c is FileBase => c instanceof FileBase;
-    return this._components.filter(isFile).sort((f1, f2) => f1.path.localeCompare(f2.path));
+    return this._components
+      .filter(isFile)
+      .sort((f1, f2) => f1.path.localeCompare(f2.path));
   }
 
   /**
@@ -217,7 +270,7 @@ export class Project {
    * @param name The task name to add
    * @param props Task properties
    */
-  public addTask(name: string, props: TaskOptions = { }) {
+  public addTask(name: string, props: TaskOptions = {}) {
     return this.tasks.addTask(name, props);
   }
 
@@ -232,6 +285,25 @@ export class Project {
     return this.tasks.removeTask(name);
   }
 
+  public get buildTask() {
+    return this.projectBuild.buildTask;
+  }
+  public get compileTask() {
+    return this.projectBuild.compileTask;
+  }
+  public get testTask() {
+    return this.projectBuild.testTask;
+  }
+  public get preCompileTask() {
+    return this.projectBuild.preCompileTask;
+  }
+  public get postCompileTask() {
+    return this.projectBuild.postCompileTask;
+  }
+  public get packageTask() {
+    return this.projectBuild.packageTask;
+  }
+
   /**
    * Finds a file at the specified relative path within this project and all
    * its subprojects.
@@ -241,7 +313,9 @@ export class Project {
    * @returns a `FileBase` or undefined if there is no file in that path
    */
   public tryFindFile(filePath: string): FileBase | undefined {
-    const absolute = path.isAbsolute(filePath) ? filePath : path.resolve(this.outdir, filePath);
+    const absolute = path.isAbsolute(filePath)
+      ? filePath
+      : path.resolve(this.outdir, filePath);
     for (const file of this.files) {
       if (absolute === file.absolutePath) {
         return file;
@@ -270,7 +344,9 @@ export class Project {
     }
 
     if (!(file instanceof JsonFile)) {
-      throw new Error(`found file ${filePath} but it is not a JsonFile. got: ${file.constructor.name}`);
+      throw new Error(
+        `found file ${filePath} but it is not a JsonFile. got: ${file.constructor.name}`
+      );
     }
 
     return file;
@@ -287,7 +363,9 @@ export class Project {
     }
 
     if (!(file instanceof ObjectFile)) {
-      throw new Error(`found file ${filePath} but it is not a ObjectFile. got: ${file.constructor.name}`);
+      throw new Error(
+        `found file ${filePath} but it is not a ObjectFile. got: ${file.constructor.name}`
+      );
     }
 
     return file;
@@ -364,7 +442,7 @@ export class Project {
    */
   public synth(): void {
     const outdir = this.outdir;
-    this.logger.info('Synthesizing project...');
+    this.logger.debug("Synthesizing project...");
 
     this.preSynthesize();
 
@@ -375,11 +453,15 @@ export class Project {
     // we exclude all subproject directories to ensure that when subproject.synth()
     // gets called below after cleanup(), subproject generated files are left intact
     for (const subproject of this.subprojects) {
-      this.addExcludeFromCleanup(subproject.outdir + '/**');
+      this.addExcludeFromCleanup(subproject.outdir + "/**");
     }
 
-    // delete all generated files before we start synthesizing new ones
-    cleanup(outdir, this.excludeFromCleanup);
+    // delete orphaned files before we start synthesizing new ones
+    cleanup(
+      outdir,
+      this.files.map((f) => f.path.replace(/\\/g, "/")),
+      this.excludeFromCleanup
+    );
 
     for (const subproject of this.subprojects) {
       subproject.synth();
@@ -398,7 +480,30 @@ export class Project {
       this.postSynthesize();
     }
 
-    this.logger.info('Synthesis complete');
+    if (this.ejected) {
+      this.logger.debug("Ejecting project...");
+
+      // Backup projenrc files
+      const files = glob.sync(".projenrc.*", {
+        cwd: this.outdir,
+        dot: true,
+        nodir: true,
+        absolute: true,
+      });
+
+      for (const file of files) {
+        renameSync(file, `${file}.bak`);
+      }
+    }
+
+    this.logger.debug("Synthesis complete");
+  }
+
+  /**
+   * Whether or not the project is being ejected.
+   */
+  public get ejected(): boolean {
+    return this._ejected;
   }
 
   /**
@@ -436,14 +541,48 @@ export class Project {
     // check that `outdir` is exclusive
     for (const p of this.subprojects) {
       if (path.resolve(p.outdir) === path.resolve(subproject.outdir)) {
-        throw new Error(`there is already a sub-project with "outdir": ${subproject.outdir}`);
+        throw new Error(
+          `there is already a sub-project with "outdir": ${subproject.outdir}`
+        );
       }
     }
 
     this.subprojects.push(subproject);
   }
-}
 
+  /**
+   * Resolves the project's output directory.
+   */
+  private determineOutdir(outdirOption?: string) {
+    if (this.parent && outdirOption && path.isAbsolute(outdirOption)) {
+      throw new Error('"outdir" must be a relative path');
+    }
+
+    // if this is a subproject, it is relative to the parent
+    if (this.parent) {
+      if (!outdirOption) {
+        throw new Error('"outdir" must be specified for subprojects');
+      }
+
+      return path.resolve(this.parent.outdir, outdirOption);
+    }
+
+    // if this is running inside a test and outdir is not explicitly set
+    // use a temp directory (unless cwd is aleady under tmp)
+    if (IS_TEST_RUN && !outdirOption) {
+      const realCwd = realpathSync(process.cwd());
+      const realTmp = realpathSync(tmpdir());
+
+      if (realCwd.startsWith(realTmp)) {
+        return path.resolve(realCwd, outdirOption ?? ".");
+      }
+
+      return mkdtempSync(path.join(tmpdir(), "projen."));
+    }
+
+    return path.resolve(outdirOption ?? ".");
+  }
+}
 
 /**
  * Which type of project this is.
@@ -454,26 +593,26 @@ export enum ProjectType {
   /**
    * This module may be a either a library or an app.
    */
-  UNKNOWN = 'unknown',
+  UNKNOWN = "unknown",
 
   /**
    * This is a library, intended to be published to a package manager and
    * consumed by other projects.
    */
-  LIB = 'lib',
+  LIB = "lib",
 
   /**
    * This is an app (service, tool, website, etc). Its artifacts are intended to
    * be deployed or published for end-user consumption.
    */
-  APP = 'app'
+  APP = "app",
 }
 
 /**
  * Information passed from `projen new` to the project object when the project
  * is first created. It is used to generate projenrc files in various languages.
  */
-export interface NewProject {
+export interface InitProject {
   /**
    * The JSII FQN of the project type.
    */
@@ -491,205 +630,7 @@ export interface NewProject {
 
   /**
    * Include commented out options. Does not apply to projenrc.json files.
-   * @default NewProjectOptionHints.FEATURED
+   * @default InitProjectOptionHints.FEATURED
    */
-  readonly comments: NewProjectOptionHints;
-}
-
-/**
- * Options for `GitHubProject`.
- */
-export interface GitHubProjectOptions extends ProjectOptions {
-  /**
-   * Add a Gitpod development environment
-   *
-   * @default false
-   */
-  readonly gitpod?: boolean;
-
-  /**
-   * Enable VSCode integration.
-   *
-   * Enabled by default for root projects. Disabled for non-root projects.
-   *
-   * @default true
-   */
-  readonly vscode?: boolean;
-
-  /**
-   * Enable GitHub integration.
-   *
-   * Enabled by default for root projects. Disabled for non-root projects.
-   *
-   * @default true
-   */
-  readonly github?: boolean;
-
-  /**
-   * Options for GitHub integration
-   *
-   * @default - see GitHubOptions
-   */
-  readonly githubOptions?: GitHubOptions;
-
-  /**
-   * Whether mergify should be enabled on this repository or not.
-   *
-   * @default true
-   * @deprecated use `githubOptions.mergify` instead
-   */
-  readonly mergify?: boolean;
-
-  /**
-   * Add a VSCode development environment (used for GitHub Codespaces)
-   *
-   * @default false
-   */
-  readonly devContainer?: boolean;
-
-  /**
-   * Add a `clobber` task which resets the repo to origin.
-   * @default true
-   */
-  readonly clobber?: boolean;
-
-  /**
-   * The README setup.
-   *
-   * @default - { filename: 'README.md', contents: '# replace this' }
-   * @example "{ filename: 'readme.md', contents: '# title' }"
-   */
-  readonly readme?: SampleReadmeProps;
-
-  /**
-   * Which type of project this is (library/app).
-   * @default ProjectType.UNKNOWN
-   * @deprecated no longer supported at the base project level
-   */
-  readonly projectType?: ProjectType;
-
-  /**
-   * Enable and configure the 'auto approve' workflow.
-   * @default - auto approve is disabled
-   */
-  readonly autoApproveOptions?: AutoApproveOptions;
-
-  /**
-   * Configure options for automatic merging on GitHub. Has no effect if
-   * `github.mergify` is set to false.
-   *
-   * @default - see defaults in `AutoMergeOptions`
-   */
-  readonly autoMergeOptions?: AutoMergeOptions;
-
-  /**
-   * Auto-close stale issues and pull requests. To disable set `stale` to `false`.
-   *
-   * @default - see defaults in `StaleOptions`
-   */
-  readonly staleOptions?: StaleOptions;
-
-  /**
-   * Auto-close of stale issues and pull request. See `staleOptions` for options.
-   *
-   * @default true
-   */
-  readonly stale?: boolean;
-}
-
-/**
- * GitHub-based project.
- *
- * @deprecated This is a *temporary* class. At the moment, our base project
- * types such as `NodeProject` and `JavaProject` are derived from this, but we
- * want to be able to use these project types outside of GitHub as well. One of
- * the next steps to address this is to abstract workflows so that different
- * "engines" can be used to implement our CI/CD solutions.
- */
-export class GitHubProject extends Project {
-  /**
-   * Access all github components.
-   *
-   * This will be `undefined` for subprojects.
-   */
-  public readonly github: GitHub | undefined;
-
-  /**
-   * Access all VSCode components.
-   *
-   * This will be `undefined` for subprojects.
-   */
-  public readonly vscode: VsCode | undefined;
-
-  /**
-   * Access for Gitpod
-   *
-   * This will be `undefined` if gitpod boolean is false
-   */
-  public readonly gitpod: Gitpod | undefined;
-
-  /**
-   * Access for .devcontainer.json (used for GitHub Codespaces)
-   *
-   * This will be `undefined` if devContainer boolean is false
-   */
-  public readonly devContainer: DevContainer | undefined;
-
-  /*
-   * Which project type this is.
-   *
-   * @deprecated
-   */
-  public readonly projectType: ProjectType;
-
-  /**
-   * Auto approve set up for this project.
-   */
-  public readonly autoApprove?: AutoApprove;
-
-  constructor(options: GitHubProjectOptions) {
-    super(options);
-
-    this.projectType = options.projectType ?? ProjectType.UNKNOWN;
-    // we only allow these global services to be used in root projects
-    const github = options.github ?? (this.parent ? false : true);
-    this.github = github ? new GitHub(this, {
-      mergify: options.mergify,
-      ...options.githubOptions,
-    }) : undefined;
-
-    const vscode = options.vscode ?? (this.parent ? false : true);
-    this.vscode = vscode ? new VsCode(this) : undefined;
-
-    this.gitpod = options.gitpod ? new Gitpod(this) : undefined;
-    this.devContainer = options.devContainer ? new DevContainer(this) : undefined;
-
-    if (options.clobber ?? true) {
-      new Clobber(this);
-    }
-
-    new SampleReadme(this, options.readme);
-
-    if (options.autoApproveOptions && this.github) {
-      this.autoApprove = new AutoApprove(this.github, options.autoApproveOptions);
-    }
-
-    const stale = options.stale ?? true;
-    if (stale && this.github) {
-      new Stale(this.github, options.staleOptions);
-    }
-  }
-
-  /**
-   * Marks the provided file(s) as being generated. This is achieved using the
-   * github-linguist attributes. Generated files do not count against the
-   * repository statistics and language breakdown.
-   *
-   * @param glob the glob pattern to match (could be a file path).
-   *
-   * @see https://github.com/github/linguist/blob/master/docs/overrides.md
-   */
-  public annotateGenerated(glob: string): void {
-    this.gitattributes.addAttributes(glob, 'linguist-generated');
-  }
+  readonly comments: InitProjectOptionHints;
 }

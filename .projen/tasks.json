@@ -1,5 +1,62 @@
 {
   "tasks": {
+    "build": {
+      "name": "build",
+      "description": "Full release build",
+      "steps": [
+        {
+          "spawn": "default"
+        },
+        {
+          "spawn": "pre-compile"
+        },
+        {
+          "spawn": "compile"
+        },
+        {
+          "spawn": "post-compile"
+        },
+        {
+          "spawn": "test"
+        },
+        {
+          "spawn": "package"
+        }
+      ]
+    },
+    "bump": {
+      "name": "bump",
+      "description": "Bumps version based on latest git tag and generates a changelog entry",
+      "env": {
+        "OUTFILE": "package.json",
+        "CHANGELOG": "dist/changelog.md",
+        "BUMPFILE": "dist/version.txt",
+        "RELEASETAG": "dist/releasetag.txt"
+      },
+      "steps": [
+        {
+          "builtin": "release/bump-version"
+        }
+      ],
+      "condition": "! git log --oneline -1 | grep -q \"chore(release):\""
+    },
+    "bundle:task-runner": {
+      "name": "bundle:task-runner",
+      "description": "Bundle the run-task script needed for \"projen eject\"",
+      "steps": [
+        {
+          "exec": "esbuild src/task-runtime.ts --outfile=lib/run-task.js --bundle --platform=node --external:\"*/package.json\""
+        },
+        {
+          "exec": "echo \"#!/usr/bin/env node\" | cat - lib/run-task.js | tee lib/run-task.js > /dev/null",
+          "name": "Insert Node shebang to beginning of the file"
+        },
+        {
+          "exec": "echo \"const runtime = new TaskRuntime(\\\".\\\");\nruntime.runTask(process.argv[2]);\" >> lib/run-task.js",
+          "name": "Add driver code to end of the file"
+        }
+      ]
+    },
     "clobber": {
       "name": "clobber",
       "description": "hard resets to HEAD of origin and cleans the local repo",
@@ -32,174 +89,6 @@
       ],
       "condition": "git diff --exit-code > /dev/null"
     },
-    "compile": {
-      "name": "compile",
-      "description": "Only compile",
-      "steps": [
-        {
-          "exec": "jsii --silence-warnings=reserved-word --no-fix-peer-dependencies"
-        },
-        {
-          "spawn": "docgen"
-        }
-      ]
-    },
-    "test:compile": {
-      "name": "test:compile",
-      "description": "compiles the test code"
-    },
-    "test": {
-      "name": "test",
-      "description": "Run tests",
-      "steps": [
-        {
-          "spawn": "test:compile"
-        },
-        {
-          "exec": "jest --passWithNoTests --all --updateSnapshot"
-        },
-        {
-          "spawn": "eslint"
-        }
-      ]
-    },
-    "build": {
-      "name": "build",
-      "description": "Full release build (test+compile)",
-      "steps": [
-        {
-          "exec": "/bin/bash ./projen.bash"
-        },
-        {
-          "spawn": "compile"
-        },
-        {
-          "spawn": "test"
-        },
-        {
-          "spawn": "package"
-        },
-        {
-          "spawn": "readme-macros"
-        }
-      ]
-    },
-    "test:watch": {
-      "name": "test:watch",
-      "description": "Run jest in watch mode",
-      "steps": [
-        {
-          "exec": "jest --watch"
-        }
-      ]
-    },
-    "test:update": {
-      "name": "test:update",
-      "description": "Update jest snapshots",
-      "steps": [
-        {
-          "exec": "jest --updateSnapshot"
-        }
-      ]
-    },
-    "bump": {
-      "name": "bump",
-      "description": "Bumps version based on latest git tag and generates a changelog entry",
-      "env": {
-        "OUTFILE": "package.json",
-        "CHANGELOG": "dist/changelog.md",
-        "BUMPFILE": "dist/version.txt"
-      },
-      "steps": [
-        {
-          "builtin": "release/bump-version"
-        }
-      ],
-      "condition": "! git log --oneline -1 | grep -q \"chore(release):\""
-    },
-    "unbump": {
-      "name": "unbump",
-      "description": "Restores version to 0.0.0",
-      "env": {
-        "OUTFILE": "package.json",
-        "CHANGELOG": "dist/changelog.md",
-        "BUMPFILE": "dist/version.txt"
-      },
-      "steps": [
-        {
-          "builtin": "release/reset-version"
-        }
-      ]
-    },
-    "publish:github": {
-      "name": "publish:github",
-      "description": "Publish this package to GitHub Releases",
-      "requiredEnv": [
-        "GITHUB_TOKEN",
-        "GITHUB_REPOSITORY"
-      ],
-      "steps": [
-        {
-          "exec": "errout=$(mktemp); gh release create v$(cat dist/version.txt) -R $GITHUB_REPOSITORY -F dist/changelog.md -t v$(cat dist/version.txt) 2> $errout && true; exitcode=$?; if [ $exitcode -ne 0 ] && ! grep -q \"Release.tag_name already exists\" $errout; then cat $errout; exit $exitcode; fi"
-        }
-      ]
-    },
-    "upgrade": {
-      "name": "upgrade",
-      "description": "upgrade dependencies",
-      "env": {
-        "CI": "0"
-      },
-      "steps": [
-        {
-          "exec": "npm-check-updates --upgrade --target=minor --reject='projen'"
-        },
-        {
-          "exec": "yarn install --check-files"
-        },
-        {
-          "exec": "yarn upgrade @types/fs-extra @types/glob @types/ini @types/jest @types/node @types/semver @types/yargs @typescript-eslint/eslint-plugin @typescript-eslint/parser all-contributors-cli eslint eslint-import-resolver-node eslint-import-resolver-typescript eslint-plugin-import jest jest-junit jsii jsii-diff jsii-docgen jsii-pacmak json-schema markmac npm-check-updates standard-version typescript @iarna/toml chalk decamelize fs-extra glob ini semver shx xmlbuilder2 yaml yargs"
-        },
-        {
-          "exec": "/bin/bash ./projen.bash"
-        }
-      ]
-    },
-    "default": {
-      "name": "default",
-      "steps": [
-        {
-          "exec": "node .projenrc.js"
-        }
-      ]
-    },
-    "watch": {
-      "name": "watch",
-      "description": "Watch & compile in the background",
-      "steps": [
-        {
-          "exec": "jsii -w --silence-warnings=reserved-word --no-fix-peer-dependencies"
-        }
-      ]
-    },
-    "package": {
-      "name": "package",
-      "description": "Create an npm tarball",
-      "steps": [
-        {
-          "exec": "jsii-pacmak"
-        }
-      ]
-    },
-    "eslint": {
-      "name": "eslint",
-      "description": "Runs eslint against the codebase",
-      "steps": [
-        {
-          "exec": "eslint --ext .ts,.tsx --fix --no-error-on-unmatched-pattern src src/__tests__ build-tools .projenrc.js"
-        }
-      ]
-    },
     "compat": {
       "name": "compat",
       "description": "Perform API compatibility check against latest version",
@@ -209,74 +98,29 @@
         }
       ]
     },
-    "publish:npm": {
-      "name": "publish:npm",
-      "description": "Publish this package to npm",
-      "env": {
-        "NPM_DIST_TAG": "latest",
-        "NPM_REGISTRY": "registry.npmjs.org"
-      },
-      "requiredEnv": [
-        "NPM_TOKEN"
-      ],
+    "compile": {
+      "name": "compile",
+      "description": "Only compile",
       "steps": [
         {
-          "exec": "npx -p jsii-release@latest jsii-release-npm"
+          "exec": "jsii --silence-warnings=reserved-word --no-fix-peer-dependencies"
         }
       ]
     },
-    "publish:maven": {
-      "name": "publish:maven",
-      "description": "Publish this package to Maven Central",
-      "env": {
-        "MAVEN_ENDPOINT": "https://s01.oss.sonatype.org"
-      },
-      "requiredEnv": [
-        "MAVEN_GPG_PRIVATE_KEY",
-        "MAVEN_GPG_PRIVATE_KEY_PASSPHRASE",
-        "MAVEN_PASSWORD",
-        "MAVEN_USERNAME",
-        "MAVEN_STAGING_PROFILE_ID"
-      ],
+    "contributors:update": {
+      "name": "contributors:update",
       "steps": [
         {
-          "exec": "npx -p jsii-release@latest jsii-release-maven"
+          "exec": "all-contributors check | grep \"Missing contributors\" -A 1 | tail -n1 | sed -e \"s/,//g\" | xargs -n1 | grep -v \"[bot]\" | xargs -n1 -I{} all-contributors add {} code"
         }
       ]
     },
-    "publish:pypi": {
-      "name": "publish:pypi",
-      "description": "Publish this package to PyPI",
-      "requiredEnv": [
-        "TWINE_USERNAME",
-        "TWINE_PASSWORD"
-      ],
+    "default": {
+      "name": "default",
+      "description": "Synthesize project files",
       "steps": [
         {
-          "exec": "npx -p jsii-release@latest jsii-release-pypi"
-        }
-      ]
-    },
-    "docgen": {
-      "name": "docgen",
-      "description": "Generate API.md from .jsii manifest",
-      "steps": [
-        {
-          "exec": "jsii-docgen"
-        }
-      ]
-    },
-    "readme-macros": {
-      "name": "readme-macros",
-      "steps": [
-        {
-          "exec": "mv README.md README.md.bak"
-        },
-        {
-          "exec": "cat README.md.bak | markmac > README.md"
-        },
-        {
-          "exec": "rm README.md.bak"
+          "exec": "node .projenrc.js"
         }
       ]
     },
@@ -291,11 +135,172 @@
         }
       ]
     },
-    "contributors:update": {
-      "name": "contributors:update",
+    "docgen": {
+      "name": "docgen",
+      "description": "Generate API.md from .jsii manifest",
       "steps": [
         {
-          "exec": "all-contributors check | grep \"Missing contributors\" -A 1 | tail -n1 | sed -e \"s/,//g\" | xargs -n1 | grep -v \"[bot]\" | xargs -n1 -I{} all-contributors add {} code"
+          "exec": "jsii-docgen -o docs/api/API.md"
+        }
+      ]
+    },
+    "eject": {
+      "name": "eject",
+      "description": "Remove projen from the project",
+      "env": {
+        "PROJEN_EJECTING": "true"
+      },
+      "steps": [
+        {
+          "spawn": "default"
+        }
+      ]
+    },
+    "eslint": {
+      "name": "eslint",
+      "description": "Runs eslint against the codebase",
+      "steps": [
+        {
+          "exec": "eslint --ext .ts,.tsx --fix --no-error-on-unmatched-pattern src test build-tools .projenrc.js"
+        }
+      ]
+    },
+    "integ": {
+      "name": "integ",
+      "description": "Run integration tests",
+      "steps": [
+        {
+          "spawn": "compile"
+        },
+        {
+          "spawn": "package:python"
+        },
+        {
+          "spawn": "integ:python-compat"
+        }
+      ]
+    },
+    "integ:python-compat": {
+      "name": "integ:python-compat",
+      "description": "Checks that projen's submodule structure does not cause import failures for python. Expects python to be installed and projen to be fully built.",
+      "steps": [
+        {
+          "exec": "scripts/python-compat.sh"
+        }
+      ]
+    },
+    "package": {
+      "name": "package",
+      "description": "Creates the distribution package",
+      "steps": [
+        {
+          "exec": "if [ ! -z ${CI} ]; then mkdir -p dist && rsync -a . dist --exclude .git --exclude node_modules; else /bin/bash ./projen.bash package-all; fi"
+        }
+      ]
+    },
+    "package-all": {
+      "name": "package-all",
+      "description": "Packages artifacts for all target languages",
+      "steps": [
+        {
+          "spawn": "package:js"
+        },
+        {
+          "spawn": "package:java"
+        },
+        {
+          "spawn": "package:python"
+        },
+        {
+          "spawn": "package:go"
+        }
+      ]
+    },
+    "package:go": {
+      "name": "package:go",
+      "description": "Create go language bindings",
+      "steps": [
+        {
+          "exec": "jsii_version=$(node -p \"JSON.parse(fs.readFileSync('.jsii')).jsiiVersion.split(' ')[0]\")"
+        },
+        {
+          "exec": "npx jsii-pacmak@$jsii_version -v --target go"
+        }
+      ]
+    },
+    "package:java": {
+      "name": "package:java",
+      "description": "Create java language bindings",
+      "steps": [
+        {
+          "exec": "jsii_version=$(node -p \"JSON.parse(fs.readFileSync('.jsii')).jsiiVersion.split(' ')[0]\")"
+        },
+        {
+          "exec": "npx jsii-pacmak@$jsii_version -v --target java"
+        }
+      ]
+    },
+    "package:js": {
+      "name": "package:js",
+      "description": "Create js language bindings",
+      "steps": [
+        {
+          "exec": "jsii_version=$(node -p \"JSON.parse(fs.readFileSync('.jsii')).jsiiVersion.split(' ')[0]\")"
+        },
+        {
+          "exec": "npx jsii-pacmak@$jsii_version -v --target js"
+        }
+      ]
+    },
+    "package:python": {
+      "name": "package:python",
+      "description": "Create python language bindings",
+      "steps": [
+        {
+          "exec": "jsii_version=$(node -p \"JSON.parse(fs.readFileSync('.jsii')).jsiiVersion.split(' ')[0]\")"
+        },
+        {
+          "exec": "npx jsii-pacmak@$jsii_version -v --target python"
+        }
+      ]
+    },
+    "post-compile": {
+      "name": "post-compile",
+      "description": "Runs after successful compilation",
+      "steps": [
+        {
+          "spawn": "docgen"
+        },
+        {
+          "spawn": "readme-macros"
+        },
+        {
+          "spawn": "bundle:task-runner"
+        },
+        {
+          "spawn": "default"
+        }
+      ]
+    },
+    "post-upgrade": {
+      "name": "post-upgrade",
+      "description": "Runs after upgrading dependencies"
+    },
+    "pre-compile": {
+      "name": "pre-compile",
+      "description": "Prepare the project for compilation"
+    },
+    "readme-macros": {
+      "name": "readme-macros",
+      "steps": [
+        {
+          "exec": "mv README.md README.md.bak"
+        },
+        {
+          "exec": "cat README.md.bak | markmac > README.md"
+        },
+        {
+          "exec": "rm README.md.bak"
         }
       ]
     },
@@ -320,6 +325,96 @@
         },
         {
           "exec": "git diff --ignore-space-at-eol --exit-code"
+        }
+      ]
+    },
+    "test": {
+      "name": "test",
+      "description": "Run tests",
+      "steps": [
+        {
+          "exec": "jest --passWithNoTests --all --updateSnapshot"
+        },
+        {
+          "spawn": "eslint"
+        }
+      ]
+    },
+    "test:update": {
+      "name": "test:update",
+      "description": "Update jest snapshots",
+      "steps": [
+        {
+          "exec": "jest --updateSnapshot"
+        }
+      ]
+    },
+    "test:watch": {
+      "name": "test:watch",
+      "description": "Run jest in watch mode",
+      "steps": [
+        {
+          "exec": "jest --watch"
+        }
+      ]
+    },
+    "unbump": {
+      "name": "unbump",
+      "description": "Restores version to 0.0.0",
+      "env": {
+        "OUTFILE": "package.json",
+        "CHANGELOG": "dist/changelog.md",
+        "BUMPFILE": "dist/version.txt",
+        "RELEASETAG": "dist/releasetag.txt"
+      },
+      "steps": [
+        {
+          "builtin": "release/reset-version"
+        }
+      ]
+    },
+    "upgrade": {
+      "name": "upgrade",
+      "description": "upgrade dependencies",
+      "env": {
+        "CI": "0"
+      },
+      "steps": [
+        {
+          "exec": "npm-check-updates --dep dev --upgrade --target=minor --reject='markmac,projen'"
+        },
+        {
+          "exec": "npm-check-updates --dep optional --upgrade --target=minor --reject='markmac,projen'"
+        },
+        {
+          "exec": "npm-check-updates --dep peer --upgrade --target=minor --reject='markmac,projen'"
+        },
+        {
+          "exec": "npm-check-updates --dep prod --upgrade --target=minor --reject='markmac,projen'"
+        },
+        {
+          "exec": "npm-check-updates --dep bundle --upgrade --target=minor --reject='markmac,projen'"
+        },
+        {
+          "exec": "yarn install --check-files"
+        },
+        {
+          "exec": "yarn upgrade @types/conventional-changelog-config-spec @types/fs-extra @types/glob @types/ini @types/jest @types/node @types/semver @types/yargs @typescript-eslint/eslint-plugin @typescript-eslint/parser all-contributors-cli esbuild eslint-config-prettier eslint-import-resolver-node eslint-import-resolver-typescript eslint-plugin-import eslint-plugin-prettier eslint jest jest-junit jsii jsii-diff jsii-docgen json-schema npm-check-updates prettier standard-version ts-jest typescript @iarna/toml case chalk conventional-changelog-config-spec fs-extra glob ini semver shx xmlbuilder2 yaml yargs"
+        },
+        {
+          "exec": "/bin/bash ./projen.bash"
+        },
+        {
+          "spawn": "post-upgrade"
+        }
+      ]
+    },
+    "watch": {
+      "name": "watch",
+      "description": "Watch & compile in the background",
+      "steps": [
+        {
+          "exec": "jsii -w --silence-warnings=reserved-word --no-fix-peer-dependencies"
         }
       ]
     }

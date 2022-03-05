@@ -1,14 +1,13 @@
-import { Component } from '../component';
-import { Task } from '../tasks';
-import { IPythonPackaging, PythonPackagingOptions } from './python-packaging';
-import { PythonProject } from './python-project';
-import { SetupPy } from './setuppy';
+import { Component } from "../component";
+import { Task } from "../task";
+import { IPythonPackaging, PythonPackagingOptions } from "./python-packaging";
+import { PythonProject } from "./python-project";
+import { SetupPy } from "./setuppy";
 
 /**
  * Manages packaging through setuptools with a setup.py script.
  */
 export class Setuptools extends Component implements IPythonPackaging {
-  public readonly packageTask: Task;
   public readonly publishTask: Task;
 
   /**
@@ -19,22 +18,19 @@ export class Setuptools extends Component implements IPythonPackaging {
   constructor(project: PythonProject, options: PythonPackagingOptions) {
     super(project);
 
-    project.addDevDependency('wheel@0.36.2');
-    project.addDevDependency('twine@3.3.0');
+    project.addDevDependency("wheel@0.36.2");
+    project.addDevDependency("twine@3.3.0");
 
-    this.packageTask = project.addTask('package', {
-      description: 'Creates source archive and wheel for distribution.',
-      exec: 'python setup.py sdist bdist_wheel',
+    project.packageTask.exec("python setup.py sdist bdist_wheel");
+
+    this.publishTestTask = project.addTask("publish:test", {
+      description: "Uploads the package against a test PyPI endpoint.",
+      exec: "twine upload --repository-url https://test.pypi.org/legacy/ dist/*",
     });
 
-    this.publishTestTask = project.addTask('publish:test', {
-      description: 'Uploads the package against a test PyPI endpoint.',
-      exec: 'twine upload --repository-url https://test.pypi.org/legacy/ dist/*',
-    });
-
-    this.publishTask = project.addTask('publish', {
-      description: 'Uploads the package against a test PyPI endpoint.',
-      exec: 'twine upload dist/*',
+    this.publishTask = project.addTask("publish", {
+      description: "Uploads the package against a test PyPI endpoint.",
+      exec: "twine upload dist/*",
     });
 
     new SetupPy(project, {

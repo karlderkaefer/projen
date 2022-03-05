@@ -1,8 +1,8 @@
-import { existsSync, writeFileSync } from 'fs';
-import { resolve } from 'path';
-import { Component } from '../component';
-import { renderJavaScriptOptions } from '../javascript/render-options';
-import { TypeScriptProject } from '../typescript';
+import { existsSync, writeFileSync } from "fs";
+import { resolve } from "path";
+import { Component } from "../component";
+import { renderJavaScriptOptions } from "../javascript/render-options";
+import { TypeScriptProject } from "../typescript";
 
 export interface ProjenrcOptions {
   /**
@@ -10,6 +10,14 @@ export interface ProjenrcOptions {
    * @default ".projenrc.ts"
    */
   readonly filename?: string;
+
+  /**
+   * A directory tree that may contain *.ts files that can be referenced from
+   * your projenrc typescript file.
+   *
+   * @default "projenrc"
+   */
+  readonly projenCodeDir?: string;
 }
 
 /**
@@ -21,22 +29,29 @@ export class Projenrc extends Component {
   constructor(project: TypeScriptProject, options: ProjenrcOptions = {}) {
     super(project);
 
-    this.rcfile = options.filename ?? '.projenrc.ts';
+    this.rcfile = options.filename ?? ".projenrc.ts";
 
-    // tell eslint to take .projenrc.ts into account as a dev-dependency
+    const projensrc = options.projenCodeDir ?? "projenrc";
+
+    // tell eslint to take .projenrc.ts and *.ts files under `projen` into account as a dev-dependency
+    project.tsconfigDev.addInclude(this.rcfile);
     project.eslint?.allowDevDeps(this.rcfile);
     project.eslint?.addIgnorePattern(`!${this.rcfile}`);
-    project.tsconfigEslint?.addInclude(this.rcfile);
+
+    project.tsconfigDev.addInclude(`${projensrc}/**/*.ts`);
+    project.eslint?.allowDevDeps(`${projensrc}/**/*.ts`);
+    project.eslint?.addIgnorePattern(`!${projensrc}/**/*.ts`);
 
     // this is the task projen executes when running `projen` without a
     // specific task (if this task is not defined, projen falls back to
     // running "node .projenrc.js").
-    project.addDevDeps('ts-node@^9');
+    project.addDevDeps("ts-node@^9");
 
-    // use the --skip-project flag to ensure ts-node doesn't use the
-    // tsconfig.json settings intended for the project's source code
-    // see: https://github.com/projen/projen/issues/948
-    project.addTask(TypeScriptProject.DEFAULT_TASK, { exec: `ts-node --skip-project ${this.rcfile}` });
+    // we use "tsconfig.dev.json" here to allow projen source files to reside
+    // anywhere in the project tree.
+    project.defaultTask?.exec(
+      `ts-node --project ${project.tsconfigDev.fileName} ${this.rcfile}`
+    );
 
     this.generateProjenrc();
   }
@@ -47,15 +62,15 @@ export class Projenrc extends Component {
       return; // already exists
     }
 
-    const bootstrap = this.project.newProject;
+    const bootstrap = this.project.initProject;
     if (!bootstrap) {
       return;
     }
 
-    const parts = bootstrap.fqn.split('.');
+    const parts = bootstrap.fqn.split(".");
     const moduleName = parts[0];
     const importName = parts[1];
-    const className = parts.slice(1).join('.');
+    const className = parts.slice(1).join(".");
 
     const { renderedOptions, imports } = renderJavaScriptOptions({
       args: bootstrap.args,
@@ -66,13 +81,17 @@ export class Projenrc extends Component {
     imports.add(importName);
 
     const lines = new Array<string>();
-    lines.push(`import { ${[...imports].sort().join(', ')} } from '${moduleName}';`);
+    lines.push(
+      `import { ${[...imports].sort().join(", ")} } from "${moduleName}";`
+    );
     lines.push();
     lines.push(`const project = new ${className}(${renderedOptions});`);
     lines.push();
-    lines.push('project.synth();');
+    lines.push("project.synth();");
 
-    writeFileSync(rcfile, lines.join('\n'));
-    this.project.logger.info(`Project definition file was created at ${rcfile}`);
+    writeFileSync(rcfile, lines.join("\n"));
+    this.project.logger.info(
+      `Project definition file was created at ${rcfile}`
+    );
   }
 }

@@ -1,9 +1,10 @@
-import * as path from 'path';
-import { resolve } from './_resolve';
-import { PROJEN_MARKER, PROJEN_RC } from './common';
-import { Component } from './component';
-import { Project } from './project';
-import { writeFile } from './util';
+import * as path from "path";
+import { removeSync } from "fs-extra";
+import { resolve } from "./_resolve";
+import { PROJEN_MARKER, PROJEN_RC } from "./common";
+import { Component } from "./component";
+import { Project } from "./project";
+import { isExecutable, isWritable, tryReadFileSync, writeFile } from "./util";
 
 export interface FileBaseOptions {
   /**
@@ -34,15 +35,16 @@ export interface FileBaseOptions {
    * @default false
    */
   readonly executable?: boolean;
+
+  /**
+   * Adds the projen marker to the file.
+   *
+   * @default - marker will be included as long as the project is not ejected
+   */
+  readonly marker?: boolean;
 }
 
 export abstract class FileBase extends Component {
-  /**
-   * The marker to embed in files in order to identify them as projen files.
-   * This marker is used to prune these files before synthesis.
-   */
-  public static readonly PROJEN_MARKER = `${PROJEN_MARKER}. To modify, edit ${PROJEN_RC} and run "npx projen".`;
-
   /**
    * The file path, relative to the project root.
    */
@@ -59,21 +61,39 @@ export abstract class FileBase extends Component {
   public executable: boolean;
 
   /**
+   * The projen marker, used to identify files as projen-generated.
+   *
+   * Value is undefined if the project is being ejected.
+   */
+  public readonly marker: string | undefined;
+
+  /**
    * The absolute path of this file.
    */
   public readonly absolutePath: string;
 
-  constructor(project: Project, filePath: string, options: FileBaseOptions = { }) {
+  private _changed?: boolean;
+
+  constructor(
+    project: Project,
+    filePath: string,
+    options: FileBaseOptions = {}
+  ) {
     super(project);
 
-
-    this.readonly = options.readonly ?? true;
+    this.readonly = !project.ejected && (options.readonly ?? true);
     this.executable = options.executable ?? false;
     this.path = filePath;
 
+    // `marker` is empty if project is being ejected or if explicitly disabled
+    this.marker =
+      project.ejected || options.marker === false
+        ? undefined
+        : `${PROJEN_MARKER}. To modify, edit ${PROJEN_RC} and run "npx projen".`;
+
     const globPattern = `/${this.path}`;
     const committed = options.committed ?? true;
-    if (committed && filePath !== '.gitattributes') {
+    if (committed && filePath !== ".gitattributes") {
       project.root.annotateGenerated(`/${filePath}`);
     }
 
@@ -82,15 +102,22 @@ export abstract class FileBase extends Component {
     // verify file path is unique within project tree
     const existing = project.root.tryFindFile(this.absolutePath);
     if (existing && existing !== this) {
-      throw new Error(`there is already a file under ${path.relative(project.root.outdir, this.absolutePath)}`);
+      throw new Error(
+        `there is already a file under ${path.relative(
+          project.root.outdir,
+          this.absolutePath
+        )}`
+      );
     }
 
     const editGitignore = options.editGitignore ?? true;
     if (editGitignore) {
-      this.project.addGitIgnore(`${committed ? '!' : ''}${globPattern}`);
+      this.project.addGitIgnore(`${committed ? "!" : ""}${globPattern}`);
     } else {
       if (options.committed != null) {
-        throw new Error('"gitignore" is disabled, so it does not make sense to specify "committed"');
+        throw new Error(
+          '"gitignore" is disabled, so it does not make sense to specify "committed"'
+        );
       }
     }
   }
@@ -110,15 +137,69 @@ export abstract class FileBase extends Component {
   public synthesize() {
     const outdir = this.project.outdir;
     const filePath = path.join(outdir, this.path);
-    const resolver: IResolver = { resolve: (obj, options) => resolve(obj, options) };
+    const resolver: IResolver = {
+      resolve: (obj, options) => resolve(obj, options),
+    };
     const content = this.synthesizeContent(resolver);
     if (content === undefined) {
-      return; // skip
+      // remove file (if exists) and skip rest of synthesis
+      removeSync(filePath);
+      return;
     }
+
+    // check if the file was changed.
+    const prev = tryReadFileSync(filePath);
+    const prevReadonly = !isWritable(filePath);
+    const prevExecutable = isExecutable(filePath);
+    if (
+      prev !== undefined &&
+      content === prev &&
+      prevReadonly === this.readonly &&
+      prevExecutable === this.executable
+    ) {
+      this.project.logger.debug(`no change in ${filePath}`);
+      this._changed = false;
+      return;
+    }
+
     writeFile(filePath, content, {
       readonly: this.readonly,
       executable: this.executable,
     });
+
+    this.checkForProjenMarker();
+
+    this._changed = true;
+  }
+
+  /**
+   * For debugging, check whether a file was incorrectly generated with
+   * or without the projen marker. The projen marker does not *need* to be
+   * included on projen-generated files, but it's recommended since it signals
+   * that it probably should not be edited directly.
+   */
+  private checkForProjenMarker() {
+    const filePath = path.join(this.project.outdir, this.path);
+    const contents = tryReadFileSync(filePath);
+    const containsMarker = contents?.includes(PROJEN_MARKER);
+    if (this.marker && !containsMarker) {
+      this.project.logger.debug(
+        `note: expected ${this.path} to contain marker but found none.`
+      );
+    } else if (!this.marker && containsMarker) {
+      this.project.logger.debug(
+        `note: expected ${this.path} to not contain marker but found one anyway.`
+      );
+    }
+  }
+
+  /**
+   * Indicates if the file has been changed during synthesis. This property is
+   * only available in `postSynthesize()` hooks. If this is `undefined`, the
+   * file has not been synthesized yet.
+   */
+  public get changed(): boolean | undefined {
+    return this._changed;
   }
 }
 

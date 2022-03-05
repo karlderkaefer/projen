@@ -1,6 +1,10 @@
 {
   "dependencies": [
     {
+      "name": "@types/conventional-changelog-config-spec",
+      "type": "build"
+    },
+    {
       "name": "@types/fs-extra",
       "version": "^8",
       "type": "build"
@@ -19,7 +23,7 @@
     },
     {
       "name": "@types/node",
-      "version": "^10.17.0",
+      "version": "^12",
       "type": "build"
     },
     {
@@ -32,10 +36,12 @@
     },
     {
       "name": "@typescript-eslint/eslint-plugin",
+      "version": "^5",
       "type": "build"
     },
     {
       "name": "@typescript-eslint/parser",
+      "version": "^5",
       "type": "build"
     },
     {
@@ -43,7 +49,11 @@
       "type": "build"
     },
     {
-      "name": "eslint",
+      "name": "esbuild",
+      "type": "build"
+    },
+    {
+      "name": "eslint-config-prettier",
       "type": "build"
     },
     {
@@ -59,12 +69,21 @@
       "type": "build"
     },
     {
+      "name": "eslint-plugin-prettier",
+      "type": "build"
+    },
+    {
+      "name": "eslint",
+      "version": "^8",
+      "type": "build"
+    },
+    {
       "name": "jest",
       "type": "build"
     },
     {
       "name": "jest-junit",
-      "version": "^12",
+      "version": "^13",
       "type": "build"
     },
     {
@@ -80,10 +99,6 @@
       "type": "build"
     },
     {
-      "name": "jsii-pacmak",
-      "type": "build"
-    },
-    {
       "name": "json-schema",
       "type": "build"
     },
@@ -93,12 +108,20 @@
     },
     {
       "name": "npm-check-updates",
-      "version": "^11",
+      "version": "^12",
+      "type": "build"
+    },
+    {
+      "name": "prettier",
       "type": "build"
     },
     {
       "name": "standard-version",
       "version": "^9",
+      "type": "build"
+    },
+    {
+      "name": "ts-jest",
       "type": "build"
     },
     {
@@ -110,11 +133,15 @@
       "type": "bundled"
     },
     {
+      "name": "case",
+      "type": "bundled"
+    },
+    {
       "name": "chalk",
       "type": "bundled"
     },
     {
-      "name": "decamelize",
+      "name": "conventional-changelog-config-spec",
       "type": "bundled"
     },
     {
@@ -144,6 +171,7 @@
     },
     {
       "name": "yaml",
+      "version": "next",
       "type": "bundled"
     },
     {

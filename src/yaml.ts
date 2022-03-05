@@ -1,19 +1,32 @@
-import * as YAML from 'yaml';
-import { IResolver } from './file';
-import { ObjectFile, ObjectFileOptions } from './object-file';
-import { Project } from './project';
+import * as YAML from "yaml";
+import { IResolver } from "./file";
+import { ObjectFile, ObjectFileOptions } from "./object-file";
+import { Project } from "./project";
 
 /**
  * Options for `JsonFile`.
  */
-export interface YamlFileOptions extends ObjectFileOptions {}
+export interface YamlFileOptions extends ObjectFileOptions {
+  /**
+   * Maximum line width (set to 0 to disable folding).
+   *
+   * @default - 0
+   */
+  readonly lineWidth?: number;
+}
 
 /**
  * Represents a YAML file.
  */
 export class YamlFile extends ObjectFile {
+  /**
+   * Maximum line width (set to 0 to disable folding).
+   */
+  public lineWidth: number;
+
   constructor(project: Project, filePath: string, options: YamlFileOptions) {
     super(project, filePath, options);
+    this.lineWidth = options.lineWidth ?? 0;
   }
 
   protected synthesizeContent(resolver: IResolver): string | undefined {
@@ -23,9 +36,12 @@ export class YamlFile extends ObjectFile {
     }
 
     return [
-      ... (this.marker ? [`# ${YamlFile.PROJEN_MARKER}`] : []),
-      '',
-      YAML.stringify(JSON.parse(json), { indent: 2 }),
-    ].join('\n');
+      ...(this.marker ? [`# ${this.marker}`] : []),
+      "",
+      YAML.stringify(JSON.parse(json), {
+        indent: 2,
+        lineWidth: this.lineWidth,
+      }),
+    ].join("\n");
   }
 }
