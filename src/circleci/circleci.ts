@@ -1,8 +1,9 @@
 import { WorkflowJob, Workflow, Job } from "./model";
 import { Component } from "../component";
 import { Project } from "../project";
-import { snakeCaseKeys } from "../util";
+import { snakeCaseKeys, tryReadFileSync } from "../util";
 import { YamlFile } from "../yaml";
+import * as yaml from 'js-yaml';
 
 /**
  * Options for class {@link Circleci}
@@ -134,7 +135,7 @@ export class Circleci extends Component {
     return {
       version: this.options.version || 2.1,
       setup: this.options.setup,
-      orbs: this.orbs,
+      orbs: { ...this.orbs, ...this.getOrbVersions(this.file.path, this.orbs) },
       jobs: Object.keys(jobRecords).length > 0 ? jobRecords : undefined,
       workflows: workflowRecords,
     };
@@ -171,6 +172,27 @@ export class Circleci extends Component {
     }
     return result;
   };
+
+  /**
+   * get the orb versions from a workflow file
+   * @param file 
+   * @param orbs 
+   * @returns the orb versions that are defined in the workflow file
+   */
+  private getOrbVersions(file: string, orbs: Record<string, string>): Record<string, string> | undefined {
+    const workflow = tryReadFileSync(file);
+    const orbVersions: Record<string, string> = {};
+    if (!workflow) {
+      return undefined;
+    }
+    const doc = yaml.load(workflow);
+    for (const [k, v] of Object.entries(orbs)) {
+      if (doc.orbs[k]) {
+        orbVersions[k] = doc.orbs[k];
+      }
+    }
+    return orbVersions;
+  }
 
   /**
    * Add a Circleci Orb to pipeline. Will throw error if the orb already exists

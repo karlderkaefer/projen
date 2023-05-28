@@ -37,6 +37,7 @@ const project = new cdk.JsiiProject({
     "semver",
     "chalk",
     "@iarna/toml",
+    "js-yaml",
     "xmlbuilder2",
     "ini",
     "shx",
